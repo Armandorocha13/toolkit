@@ -32,7 +32,7 @@ Conforme definição estratégica, fixamos quantidades específicas para itens c
 A "Perda" ou Gasto Excedente é calculada da seguinte forma:
 1.  **Diferença** = `Saldo Real - Quantidade Padrão`.
 2.  **Se a Diferença for POSITIVA**: Significa que o técnico tem material a mais do que o contratado. O valor é calculado como `Diferença * Preço Unitário`.
-3.  **Se a Diferença for NEGATIVA**: Significa que o técnico está com material faltando. Nestes casos, o valor financeiro de "Perda" é **ZERO**, pois a empresa ainda não pagou/entregou esse item, tratando-se apenas de uma pendência de entrega.
+3.  **Se a Diferença for NEGATIVA**: Significa que o técnico está com material faltando. O valor financeiro é exibido como **NEGATIVO**, representando uma "Economia" ou valor que a empresa "deixou de pagar/entregar" no momento da auditoria.
 
 ## 4. Relatórios Gerenciais
 

@@ -83,7 +83,7 @@ async function exportFullDatasetClean() {
             descricao_item: removeAccents(r.descricao_item),
             familia: removeAccents(r.familia),
             unitario: unitPrice,
-            valor: r.diferenca > 0 ? (r.diferenca * unitPrice) : 0
+            valor: (r.diferenca * unitPrice)
         };
     });
 
