@@ -18,11 +18,11 @@ function parseDate(val) {
     return null;
 }
 
-async function importExcel() {
+async function importExcel(snapshotMes = '03/2026') {
     const workbook = new ExcelJS.Workbook();
     const filePath = path.join(__dirname, '../../dados/CONTRATADO 2026 GERAL FFA.xlsx');
 
-    console.log(`🚀 Iniciando importação de ${filePath}...`);
+    console.log(`🚀 Iniciando importação de ${filePath} para o mês ${snapshotMes}...`);
 
     await workbook.xlsx.readFile(filePath);
     const worksheet = workbook.getWorksheet(1);
@@ -49,10 +49,14 @@ async function importExcel() {
             cpf:              values[11] ? values[11].toString().trim() : null,
             status_almox:     values[12] ? values[12].toString().trim() : null,
             status_operacao:  values[13] ? values[13].toString().trim() : null,
+            snapshot_mes:     snapshotMes
         });
     });
 
-    console.log(`📦 ${allRecords.length} registros carregados. Enviando...`);
+    console.log(`📦 ${allRecords.length} registros carregados. Limpando dados anteriores de ${snapshotMes}...`);
+    
+    // Limpar apenas o mês atual antes de re-importar (Historico por mês)
+    await supabase.from('contratado_2026').delete().eq('snapshot_mes', snapshotMes);
 
     let totalInserted = 0;
     for (let i = 0; i < allRecords.length; i += BATCH_SIZE) {
@@ -70,4 +74,5 @@ async function importExcel() {
     console.log(`\n✨ Importação concluída! Total inserido: ${totalInserted}`);
 }
 
-importExcel().catch(console.error);
+const argMonth = process.argv[2] && process.argv[2].includes('/') ? process.argv[2] : '03/2026';
+importExcel(argMonth).catch(console.error);

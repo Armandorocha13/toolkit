@@ -109,8 +109,17 @@ async function importExcel() {
             }
         });
 
-        console.log(`📦 Carregado em memória. Enviando em batches de ${BATCH_SIZE}...`);
+        console.log(`📦 Carregado em memória. Limpando base atual para substituição...`);
         
+        // Truncar a tabela saldo_volante usando nossa função nativa RPC no banco de dados para evitar timeout e problemas de exclusão em massa.
+        const { error: deleteError } = await supabase.rpc('truncate_saldo_volante');
+        
+        if (deleteError) {
+            console.error("❌ Falha crítica ao tentar truncar/limpar a tabela saldo_volante:", deleteError.message);
+        } else {
+            console.log("🧹 Tabela saldo_volante limpa com sucesso. Iniciando upload dos novos dados...");
+        }
+
         for (let i = 0; i < allRecords.length; i += BATCH_SIZE) {
             const currentBatch = allRecords.slice(i, i + BATCH_SIZE);
             const { error } = await supabase
@@ -125,7 +134,7 @@ async function importExcel() {
             }
         }
 
-        console.log(`\n\n✨ Importação concluída! Total inserido: ${totalInserted}`);
+        console.log(`\n\n✨ Importação de Saldo concluída! Total inserido: ${totalInserted}`);
 
     } catch (error) {
         console.error('💥 Erro fatal na importação:', error);

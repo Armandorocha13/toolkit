@@ -1,13 +1,123 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>dashboard</title>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
-  </body>
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auditoria de Toolkit | Dashboard</title>
+    <link rel="stylesheet" href="index.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+
+<body>
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <main class="dashboard-container">
+        <header class="glass-header">
+            <div class="logo">
+                <img src="logo.png" alt="Logo" style="height: 35px; object-fit: contain;">
+                <h1>CONTROLE <span>TOOLKIT</span></h1>
+            </div>
+            <div class="status-badge" id="server-status">
+                <span class="indicator"></span> Servidor Offline
+            </div>
+        </header>
+
+        <section class="main-grid">
+            <!-- Coluna de Importação -->
+            <div class="glass-card upload-section">
+                <div class="card-header">
+                    <i data-lucide="upload-cloud"></i>
+                    <h2>Sincronizar Banco</h2>
+                </div>
+                <p>Atualize os registros de estoque e colaboradores enviando os arquivos Excel mais recentes.</p>
+
+                <form id="upload-form" class="upload-controls">
+                    <div class="file-input-group" style="display: flex; flex-direction: column; gap: 10px;">
+                        <label for="file_contratados" class="drop-zone"
+                            style="padding: 1rem; display: flex; flex-direction: column; gap: 5px;">
+                            <span style="font-size: 0.85rem; color: var(--text-muted); text-align: left;">1. Planilha de
+                                Trabalhadores ATIVOS (RH)</span>
+                            <span class="file-label" id="label-contratados" style="font-weight: 500;">Selecionar
+                                arquivo...</span>
+                            <input type="file" id="file_contratados" accept=".xlsx" style="display: none;">
+                        </label>
+
+                        <label for="file_volante" class="drop-zone"
+                            style="padding: 1rem; display: flex; flex-direction: column; gap: 5px;">
+                            <span style="font-size: 0.85rem; color: var(--text-muted); text-align: left;">2. Planilha de
+                                SALDO VOLANTE (WMS)</span>
+                            <span class="file-label" id="label-volante" style="font-weight: 500;">Selecionar
+                                arquivo...</span>
+                            <input type="file" id="file_volante" accept=".xlsx" style="display: none;">
+                        </label>
+                    </div>
+                    <button type="submit" class="btn primary" id="sync-btn" disabled style="margin-top: 15px;">
+                        <i data-lucide="refresh-cw"></i> Sincronizar Tudo
+                    </button>
+                </form>
+
+                <div class="sync-logs" id="sync-logs">
+                    <div class="log-item info">Aguardando arquivos...</div>
+                </div>
+            </div>
+
+            <!-- Coluna de Exportação -->
+            <div class="glass-card export-section">
+                <div class="card-header">
+                    <i data-lucide="download"></i>
+                    <h2>Exportar Relatório</h2>
+                </div>
+                <p>Gere o relatório consolidado de auditoria atualizado com base nos dados sincronizados.</p>
+
+                <div class="month-selector">
+                    <label>Mês de Referência:</label>
+                    <div class="select-container">
+                        <select id="export-month">
+                            <option value="03/2026">Março / 2026</option>
+                            <option value="04/2026">Abril / 2026</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="report-options">
+                    <div class="option">
+                        <input type="checkbox" id="include-history" checked disabled>
+                        <label for="include-history">Incluir Histórico RH</label>
+                    </div>
+                </div>
+
+                <button class="btn secondary" id="export-btn">
+                    <i data-lucide="file-spreadsheet"></i> Gerar CONTROLE DE TOOLKIT
+                </button>
+
+                <div class="export-status" id="export-status"></div>
+
+                <div class="last-exports" id="last-exports">
+                    <h3>Últimos Relatórios</h3>
+                    <ul id="reports-list">
+                        <li class="empty">Nenhum relatório gerado nesta sessão.</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <footer>
+            <p>&copy; 2026 CONTROLE TOOLKIT - Feito por AeroCode </p>
+        </footer>
+    </main>
+
+    <script src="index.js"></script>
+    <script>
+        lucide.createIcons();
+    </script>
+</body>
+
 </html>

@@ -1,6 +1,7 @@
 const ExcelJS = require('exceljs');
 const { createClient } = require('@supabase/supabase-js');
 const path = require('path');
+const os = require('os');
 
 const SUPABASE_URL = 'https://dldvrpiwdenxpknquvpm.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_wXrXxklY847tvHXdnY9RkA_aysrKB3X';
@@ -29,29 +30,14 @@ function getFormattedDate(dateStr) {
     return `${day}/${month}/${year}`;
 }
 
-async function exportCompleteReport() {
-    console.log("📥 Iniciando exportação completa em três abas...");
+async function exportCompleteReport(targetMonth = '03/2026') {
+    const [monthPart, yearPart] = targetMonth.split('/');
+    const startDate = `${yearPart}-${monthPart}-01`;
+    const endDate = `${yearPart}-${monthPart}-31`; // Simplificado para auditoria
 
-    // 0. CARREGAR LISTAGEM DE INATIVOS
-    const inativosSet = new Set();
-    const inativosPath = path.join(__dirname, '../../dados/listagemFuncionariosInativos.xlsx');
-    try {
-        const wbInativos = new ExcelJS.Workbook();
-        await wbInativos.xlsx.readFile(inativosPath);
-        const wsInativos = wbInativos.getWorksheet(1);
-        wsInativos.eachRow((row, rowNumber) => {
-            if (rowNumber > 1) {
-                const matricula = row.values[1];
-                if (matricula) {
-                    // Normalizar matrícula para casar (ex: 002140 == 2140)
-                    inativosSet.add(String(matricula).trim().replace(/^0+/, ''));
-                }
-            }
-        });
-        console.log(`✅ Carregados ${inativosSet.size} funcionários inativos do Excel.`);
-    } catch (e) {
-        console.error("⚠️ Aviso: Não foi possível carregar listagem de inativos:", e.message);
-    }
+    console.log(`📥 Iniciando exportação completa para ${targetMonth}...`);
+
+    console.log(`✅ Preparando auditoria para ${targetMonth}...`);
 
     // 1. EXTRAÇÃO DOS DADOS DETALHADOS (ABA 1)
     let detailedRecords = [];
@@ -61,14 +47,15 @@ async function exportCompleteReport() {
 
     while (hasMore) {
         const { data, error } = await supabase
-            .from('view_comparativo_toolkit')
+            .from('view_toolkit_aba1_detalhado')
             .select('*')
-            .gte('admissao', '2026-03-01')
-            .lte('admissao', '2026-03-31')
-            .order('nome_colaborador', { ascending: true })
+            .order('nome', { ascending: true })
             .range(from, from + step - 1);
 
-        if (error) break;
+        if (error) {
+            console.error("Erro na paginação de detalhados:", error);
+            break;
+        }
         if (!data || data.length === 0) {
             hasMore = false;
         } else {
@@ -83,7 +70,7 @@ async function exportCompleteReport() {
     const { data: techDetails } = await supabase
         .from('contratado_2026')
         .select('funcionario, uf_empresa, funcao');
-    
+
     const techMap = {};
     if (techDetails) {
         techDetails.forEach(t => {
@@ -98,7 +85,7 @@ async function exportCompleteReport() {
     const { data: budgetRecords, error: bError } = await supabase
         .from('tb_resultado_vagas_consolidado')
         .select('*')
-        .eq('mes', '03/2026')
+        .eq('mes', targetMonth)
         .order('mes', { ascending: false });
 
     if (bError) console.error("Erro ao buscar resumo de vagas:", bError);
@@ -113,35 +100,29 @@ async function exportCompleteReport() {
     // --- ABA 1: COMPARATIVO INDIVIDUAL ---
     const ws1 = workbook.addWorksheet('1. Comparativo Individual');
     ws1.columns = [
-        { header: 'Cod Equipe', key: 'codigo_equipe', width: 12 },
-        { header: 'Colaborador', key: 'nome_colaborador', width: 35 },
-        { header: 'Contrato', key: 'contrato', width: 20 },
+        { header: 'Cod Equipe', key: 'matricula', width: 12 },
+        { header: 'Colaborador', key: 'nome', width: 35 },
+        { header: 'Contrato', key: 'tipo_toolkit', width: 20 },
         { header: 'Admissão', key: 'admissao', width: 12 },
-        { header: 'Filial', key: 'filial', width: 20 },
+        { header: 'Filial', key: 'base', width: 20 },
         { header: 'Material', key: 'descricao_item', width: 40 },
         { header: 'Código Material', key: 'codigo_item', width: 15 },
         { header: 'Família', key: 'familia', width: 20 },
-        { header: 'Valor Unitário', key: 'unitario', width: 15 },
-        { header: 'Qtd Padrão', key: 'quantidade', width: 12 },
-        { header: 'Saldo Real', key: 'saldo', width: 12 },
+        { header: 'Valor Unitário', key: 'preco_unitario', width: 15, style: { numFmt: '"R$ "#,##0.00' } },
+        { header: 'Qtd Padrão', key: 'quantidade_padrao', width: 12 },
+        { header: 'Saldo Real', key: 'saldo_funcionario', width: 12 },
         { header: 'Diferença', key: 'diferenca', width: 12 },
-        { header: 'Valor Total Perda', key: 'valor', width: 15 }
+        { header: 'Valor Total Perda', key: 'valor_diferenca', width: 15, style: { numFmt: '"R$ "#,##0.00' } }
     ];
 
-    const rows1 = detailedRecords.map(r => {
-        const normCode = String(r.codigo_item).replace(/^0+/, '');
-        const price = parseFloat(precosMap[normCode]) || 0;
-        return {
-            ...r,
-            nome_colaborador: removeAccents(r.nome_colaborador),
-            descricao_item: removeAccents(r.descricao_item),
-            contrato: removeAccents(r.contrato),
-            filial: removeAccents(r.filial),
-            familia: removeAccents(r.familia),
-            unitario: price,
-            valor: (r.diferenca * price)
-        };
-    });
+    const rows1 = detailedRecords.map(r => ({
+        ...r,
+        nome: removeAccents(r.nome),
+        descricao_item: removeAccents(r.descricao_item),
+        tipo_toolkit: removeAccents(r.tipo_toolkit),
+        base: removeAccents(r.base),
+        familia: removeAccents(r.familia)
+    }));
     ws1.addRows(rows1);
 
     // --- ABA 2: RESUMO DE VAGAS E ORÇAMENTO ---
@@ -156,9 +137,9 @@ async function exportCompleteReport() {
         { header: 'GAP Contratação (B-A)', key: 'gap', width: 18 },
         { header: 'Techs c/ Excesso de Carga', key: 'paguei_a_mais_tecnicos', width: 22 },
         { header: 'Techs c/ Itens Faltantes', key: 'receberam_listagem_faltante', width: 22 },
-        { header: 'Orçamento Previsto (R$)', key: 'orcamento_previsto', width: 22 },
-        { header: 'Custo de Entrega Efetuado (R$)', key: 'orcamento_pago', width: 22 },
-        { header: 'Saldo Orçamento (Economia/Estouro)', key: 'saldo_orcamento', width: 25 }
+        { header: 'Orçamento Previsto', key: 'orcamento_previsto', width: 22, style: { numFmt: '"R$ "#,##0.00' } },
+        { header: 'Custo Efetivo', key: 'orcamento_pago', width: 22, style: { numFmt: '"R$ "#,##0.00' } },
+        { header: 'Saldo Orçamento', key: 'saldo_orcamento', width: 25, style: { numFmt: '"R$ "#,##0.00' } }
     ];
 
     const rows2 = (budgetRecords || []).map(r => ({
@@ -172,68 +153,36 @@ async function exportCompleteReport() {
     // --- ABA 3: RESUMO POR TÉCNICO ---
     const ws3 = workbook.addWorksheet('3. Resumo por Tecnico');
     ws3.columns = [
-        { header: 'Mês/Ano', key: 'mes', width: 12 },
-        { header: 'Admissão', key: 'admissao_formatted', width: 15 },
+        { header: 'Matrícula', key: 'matricula', width: 12 },
         { header: 'Colaborador', key: 'nome', width: 35 },
+        { header: 'Admissão', key: 'admissao', width: 15 },
         { header: 'Base', key: 'base', width: 20 },
         { header: 'Estado', key: 'estado', width: 10 },
         { header: 'Função', key: 'funcao', width: 30 },
-        { header: 'Demitido RH?', key: 'status_inativo', width: 15 },
-        { header: 'Status Toolkit', key: 'status_toolkit', width: 15 },
-        { header: 'Quantidade Recebida', key: 'qtd_recebida', width: 18 },
-        { header: 'Quantidade Faltante', key: 'qtd_faltante', width: 18 },
-        { header: 'Orçamento Gasto (R$)', key: 'orcamento_gasto', width: 20 }
+        { header: 'Demitido?', key: 'status_demitido', width: 15 },
+        { header: 'Status Toolkit', key: 'status_toolkit', width: 20 }
     ];
 
-    // Agregação dos dados por técnico
-    const techAggregation = {};
-    detailedRecords.forEach(r => {
-        const id = r.codigo_equipe;
-        if (!techAggregation[id]) {
-            const info = techMap[id] || { estado: 'N/D', funcao: 'N/D' };
-            
-            // Checar se está na planilha de inativos
-            const normalizedId = String(id).replace(/^0+/, '');
-            const isInativo = inativosSet.has(normalizedId);
+    const { data: aba3Data, error: aba3Error } = await supabase
+        .from('view_toolkit_aba3_resumo_tecnico')
+        .select('*');
 
-            techAggregation[id] = {
-                mes: getMesAno(r.admissao),
-                admissao_formatted: getFormattedDate(r.admissao),
-                nome: removeAccents(r.nome_colaborador),
-                base: removeAccents(r.filial),
-                estado: info.estado,
-                funcao: removeAccents(info.funcao),
-                status_inativo: isInativo ? 'SIM' : 'NÃO',
-                status_toolkit: 'SIM',
-                qtd_recebida: 0,
-                qtd_faltante: 0,
-                orcamento_gasto: 0
-            };
-        }
+    if (aba3Error) console.error("Erro ao buscar resumo aba 3:", aba3Error);
 
-        const normCode = String(r.codigo_item).replace(/^0+/, '');
-        const price = parseFloat(precosMap[normCode]) || 0;
-        const diff = parseFloat(r.diferenca) || 0;
-        const saldo = parseFloat(r.saldo) || 0;
-
-        techAggregation[id].qtd_recebida += saldo;
-        
-        if (diff < 0) {
-            techAggregation[id].status_toolkit = 'NÃO';
-            techAggregation[id].qtd_faltante += Math.abs(diff);
-        }
-
-        techAggregation[id].orcamento_gasto += (saldo * price);
-    });
-
-    const rows3 = Object.values(techAggregation);
+    const rows3 = (aba3Data || []).map(r => ({
+        ...r,
+        nome: removeAccents(r.nome),
+        base: removeAccents(r.base),
+        funcao: removeAccents(r.funcao),
+        admissao: getFormattedDate(r.admissao)
+    }));
     ws3.addRows(rows3);
 
     // --- ESTILIZAÇÃO E SALVAMENTO ---
     [ws1, ws2, ws3].forEach(ws => {
-      ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0070C0' } };
-      ws.getRow(1).font = { color: { argb: 'FFFFFFFF' }, bold: true };
-      ws.getRow(1).alignment = { horizontal: 'center' };
+        ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0070C0' } };
+        ws.getRow(1).font = { color: { argb: 'FFFFFFFF' }, bold: true };
+        ws.getRow(1).alignment = { horizontal: 'center' };
     });
 
     // Colorir células de "SIM" em inativos para destaque (Opcional, mas legal)
@@ -249,9 +198,15 @@ async function exportCompleteReport() {
     });
 
     const filePath = path.join(__dirname, '../../dados/CONTROLE DE TOOLKIT.xlsx');
-    await workbook.xlsx.writeFile(filePath);
-    console.log(`✨ RELATÓRIO CONSOLIDADO ATUALIZADO COM SUCESSO!`);
-    console.log(`📍 Caminho: ${filePath}`);
+    
+    try {
+        await workbook.xlsx.writeFile(filePath);
+        console.log(`✨ RELATÓRIO CONSOLIDADO ATUALIZADO COM SUCESSO!`);
+        console.log(`📍 Salvo na pasta local do projeto: ${filePath}`);
+    } catch (writeErr) {
+        console.error(`❌ Erro ao salvar arquivo. Verifique se o Excel está aberto:`, writeErr.message);
+    }
 }
 
-exportCompleteReport().catch(console.error);
+const argMonth = process.argv[2] && process.argv[2].includes('/') ? process.argv[2] : '03/2026';
+exportCompleteReport(argMonth).catch(console.error);
