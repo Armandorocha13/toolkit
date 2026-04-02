@@ -42,29 +42,33 @@ app.post('/sync', upload.fields([
     { name: 'file_volante', maxCount: 1 }
 ]), async (req, res) => {
     const { month } = req.body;
-    console.log(`Recebida solicitação de sincronização para: ${month}`);
+    console.log(`Recebida solicitação de sincronização para: ${month || 'Mês não especificado'}`);
     const logs = [];
 
-    // Renomeia os arquivos temporários para seus nomes oficiais seguros
+    // Processamento de arquivos (OPCIONAL)
     try {
-        if (req.files['file_contratados']) {
+        if (req.files && req.files['file_contratados']) {
             fs.moveSync(
                 req.files['file_contratados'][0].path, 
                 path.join(__dirname, 'dados', 'CONTRATADO 2026 GERAL FFA.xlsx'),
                 { overwrite: true }
             );
+            logs.push({ type: 'info', message: 'Nova planilha de Contratados processada.' });
         }
-        if (req.files['file_volante']) {
+        
+        if (req.files && req.files['file_volante']) {
             fs.moveSync(
                 req.files['file_volante'][0].path, 
                 path.join(__dirname, 'dados', 'saldoVolante.xlsx'),
                 { overwrite: true }
             );
+            logs.push({ type: 'info', message: 'Nova planilha de Saldo Volante processada.' });
         }
     } catch (err) {
-        console.error("Erro ao renomear arquivos:", err);
+        console.error("Erro ao processar novos arquivos:", err);
         return res.status(500).json({ success: false, logs: [{ type: 'error', message: `Erro ao processar as planilhas: ${err.message}` }] });
     }
+
 
     // Rodar os scripts de importação em sequência
     const scripts = [
@@ -104,7 +108,33 @@ app.post('/export', async (req, res) => {
             console.error(`Erro na exportação: ${error.message}`);
             return res.status(500).json({ success: false, message: error.message });
         }
-        res.json({ success: true, filename: 'CONTROLE DE TOOLKIT.xlsx' });
+        res.json({ success: true, filename: `Controle_Toolkit_${month.replace('/', '_')}.xlsx` });
+    });
+});
+
+// PBI REFRESH ENDPOINT
+app.post('/pbi', async (req, res) => {
+    console.log(`Solicitação de atualização de Power BI recebida`);
+    
+    // Executa a consolidação final para o Power BI
+    exec(`node scripts/maintenance/refreshConsolidated.js`, (error, stdout, stderr) => {
+        if (error) {
+            console.error(`Erro ao atualizar PBI: ${error.message}`);
+            return res.status(500).json({ success: false, message: error.message });
+        }
+        res.json({ success: true, message: "Dados consolidados para o Power BI com sucesso!" });
+    });
+});
+
+
+// Download via HTTP Browser (Essencial para Nuvem / Render)
+app.get('/download', (req, res) => {
+    const filePath = path.join(__dirname, 'dados', 'CONTROLE DE TOOLKIT.xlsx');
+    res.download(filePath, 'CONTROLE_DE_TOOLKIT.xlsx', (err) => {
+        if (err) {
+            console.error("❌ Erro ao enviar relatório via Download:", err.message);
+            if (!res.headersSent) res.status(500).send("Erro ao processar download.");
+        }
     });
 });
 

@@ -28,35 +28,54 @@ async function importExcel(snapshotMes = '03/2026') {
     const worksheet = workbook.getWorksheet(1);
 
     const allRecords = [];
+    let colMap = {};
 
     worksheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
-        if (rowNumber === 1) return; // Pular cabeçalho
+        if (rowNumber === 1) {
+            row.values.forEach((val, index) => {
+                if (val && typeof val === 'string') {
+                    colMap[val.trim().toLowerCase()] = index;
+                }
+            });
+            return;
+        }
 
         const values = row.values;
         if (!values || values.length < 2) return;
 
+        const getRaw = (colName) => {
+            const idx = colMap[colName];
+            return idx ? values[idx] : null;
+        };
+        const getStr = (colName) => {
+            const val = getRaw(colName);
+            return val ? val.toString().trim() : null;
+        };
+
         allRecords.push({
-            empresa:          values[1] ? values[1].toString().trim() : null,
-            cidade_empresa:   values[2] ? values[2].toString().trim() : null,
-            uf_empresa:       values[3] ? values[3].toString().trim() : null,
-            nome_empresa:     values[4] ? values[4].toString().trim() : null,
-            funcionario:      values[5] ? values[5].toString().trim() : null,
-            nome_funcionario: values[6] ? values[6].toString().trim() : null,
-            funcao:           values[7] ? values[7].toString().trim() : null,
-            departamento:     values[8] ? values[8].toString().trim() : null,
-            status:           values[9] ? values[9].toString().trim() : null,
-            admissao:         parseDate(values[10]),
-            cpf:              values[11] ? values[11].toString().trim() : null,
-            status_almox:     values[12] ? values[12].toString().trim() : null,
-            status_operacao:  values[13] ? values[13].toString().trim() : null,
-            snapshot_mes:     snapshotMes
+            empresa:          getStr('empresa'),
+            cidade_empresa:   getStr('cidade_empresa'),
+            uf_empresa:       getStr('uf_empresa'),
+            nome_empresa:     getStr('nome_empresa'),
+            funcionario:      getStr('funcionario'),
+            nome_funcionario: getStr('nome_funcionario'),
+            funcao:           getStr('funcao'),
+            departamento:     getStr('departamento'),
+            status:           getStr('status'),
+            admissao:         parseDate(getRaw('admissao')),
+            cpf:              getStr('cpf'),
+            status_almox:     getStr('status_almox'),
+            status_operacao:  getStr('status_operacao')
         });
     });
 
-    console.log(`📦 ${allRecords.length} registros carregados. Limpando dados anteriores de ${snapshotMes}...`);
+    console.log(`📦 ${allRecords.length} registros identificados. Esvaziando base antiga...`);
     
-    // Limpar apenas o mês atual antes de re-importar (Historico por mês)
-    await supabase.from('contratado_2026').delete().eq('snapshot_mes', snapshotMes);
+    // TRUNCATE: Limpa a tabela integralmente antes de puxar, previnindo "técnicos fantasmas"
+    const { error: truncateErr } = await supabase.rpc('truncate_contratado');
+    if (truncateErr) {
+        console.error("❌ Falha crítica ao tentar limpar a tabela Contratados:", truncateErr);
+    }
 
     let totalInserted = 0;
     for (let i = 0; i < allRecords.length; i += BATCH_SIZE) {

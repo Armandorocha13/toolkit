@@ -141,10 +141,19 @@ exportBtn.addEventListener('click', async () => {
 function updateReportsList(filename) {
     if (reportsList.querySelector('.empty')) reportsList.innerHTML = '';
     const li = document.createElement('li');
-    li.style.fontSize = '0.85rem';
-    li.style.color = 'var(--success)';
-    li.style.marginBottom = '0.5rem';
-    li.innerHTML = `<i data-lucide="file-check"></i> ${filename}`;
+    li.style.marginBottom = '0.75rem';
+    li.style.display = 'flex';
+    li.style.alignItems = 'center';
+    
+    li.innerHTML = `
+        <a href="/download" download="${filename}" class="btn log-item success" style="text-decoration: none; display: inline-flex; width: 100%; align-items: center; justify-content: center; gap: 8px; color: var(--success); cursor: pointer; transition: 0.2s;">
+            <i data-lucide="download-cloud" style="width: 18px; height: 18px;"></i>
+            Clique aqui para Baixar o Relatório
+        </a>
+    `;
     reportsList.prepend(li);
-    lucide.createIcons();
+    if (window.lucide) lucide.createIcons();
+    
+    // Dispara o download automático também (conveniente)
+    window.location.href = '/download';
 }

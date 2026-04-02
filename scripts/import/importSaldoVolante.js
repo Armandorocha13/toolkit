@@ -2,9 +2,8 @@ const ExcelJS = require('exceljs');
 const { createClient } = require('@supabase/supabase-js');
 const path = require('path');
 
-// Configurações (Preenchidas automaticamente pelo Agent)
 const SUPABASE_URL = 'https://dldvrpiwdenxpknquvpm.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_wXrXxklY847tvHXdnY9RkA_aysrKB3X'; // Use a chave default publishable
+const SUPABASE_KEY = 'sb_publishable_wXrXxklY847tvHXdnY9RkA_aysrKB3X';
 const BATCH_SIZE = 1000;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -17,6 +16,12 @@ function cleanNumber(val) {
     return isNaN(num) ? 0 : num;
 }
 
+function getStr(values, idx) {
+    if (!idx) return null;
+    const v = values[idx];
+    return v !== null && v !== undefined ? v.toString().trim() : null;
+}
+
 async function importExcel() {
     const workbook = new ExcelJS.Workbook();
     const filePath = path.join(__dirname, '../../dados/saldoVolante.xlsx');
@@ -27,118 +32,117 @@ async function importExcel() {
         await workbook.xlsx.readFile(filePath);
         const worksheet = workbook.getWorksheet(1);
         
-        let batch = [];
-        let totalProcessed = 0;
-        let totalInserted = 0;
+        // ──────────────────────────────────────────────────
+        // PASSO 1: Ler o cabeçalho dinamicamente (linha 1)
+        // ──────────────────────────────────────────────────
+        let colMap = {};
+        worksheet.getRow(1).eachCell({ includeEmpty: false }, (cell, colNumber) => {
+            const header = cell.value ? cell.value.toString().trim().toLowerCase() : null;
+            if (header) colMap[header] = colNumber;
+        });
 
-        worksheet.eachRow({ includeEmpty: true }, async function(row, rowNumber) {
-            // Pular as 5 primeiras linhas (Header está na 5, dados começam na 6)
-            if (rowNumber <= 5) return;
+        console.log('🗺️ Mapeamento de colunas detectado:', colMap);
+
+        // Mapa normalizado — tolera variações de nomenclatura do arquivo
+        const col = {
+            cod_supervisor:  colMap['cód. supervisor'] || colMap['cod. supervisor'] || colMap['cod supervisor'],
+            supervisor:      colMap['supervisor'],
+            equipe:          colMap['equipe'],
+            fre:             colMap['nº f.r.e.'] || colMap['nº fre'] || colMap['fre'],
+            nome_equipe:     colMap['nome da equipe'] || colMap['nome equipe'],
+            conta_cliente:   colMap['conta cliente'],
+            cod_material:    colMap['cód. material'] || colMap['cod. material'] || colMap['cod material'],
+            desc_material:   colMap['desc. material'] || colMap['descrição material'] || colMap['desc material'],
+            desc_auxiliar:   colMap['descrição auxiliar'] || colMap['desc. auxiliar'],
+            cod_cpl_aux:     colMap['cód. cpl. aux'] || colMap['cód cpl aux'],
+            unidade_medida:  colMap['unidade'],
+            cod_compl:       colMap['cód. compl.'] || colMap['cod compl'],
+            grupo_material:  colMap['grupo de material'] || colMap['grupo material'],
+            recebido:        colMap['recebido'],
+            devolucao:       colMap['devolução'] || colMap['devolucao'],
+            aplicado:        colMap['aplicado'],
+            removido:        colMap['removido'],
+            saldo:           colMap['saldo'],
+            valor_unitario:  colMap['valor unit.'] || colMap['valor unitário'],
+            total:           colMap['total r$'] || colMap['total'],
+        };
+
+        // ──────────────────────────────────────────────────
+        // PASSO 2: TRUNCATE antes de importar
+        // ──────────────────────────────────────────────────
+        console.log('🗑️ Limpando tabela saldo_volante antes de importar...');
+        const { error: truncErr } = await supabase.rpc('truncate_saldo_volante');
+        if (truncErr) {
+            console.error('❌ Erro ao truncar:', truncErr.message);
+            return;
+        }
+        console.log('✅ Tabela limpa com sucesso!');
+
+        // ──────────────────────────────────────────────────
+        // PASSO 3: Iterar e inserir em batches
+        // ──────────────────────────────────────────────────
+        let allRecords = [];
+        let totalProcessed = 0;
+
+        worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+            if (rowNumber === 1) return; // Pular cabeçalho
 
             const values = row.values;
-            if (!values || values.length < 2) return; // Linha vazia
+            if (!values || values.length < 3) return;
 
-            const record = {
-                contrato: values[1] ? values[1].toString() : null,
-                projeto: values[2] ? values[2].toString() : null,
-                cod_supervisor: values[3] ? values[3].toString() : null,
-                supervisor: values[4] ? values[4].toString() : null,
-                equipe: values[5] ? values[5].toString() : null,
-                fre: values[6] ? values[6].toString() : null,
-                nome_equipe: values[7] ? values[7].toString() : null,
-                conta_cliente: values[8] ? values[8].toString() : null,
-                cod_material: values[9] ? values[9].toString() : null,
-                desc_material: values[10] ? values[10].toString() : null,
-                desc_auxiliar: values[11] ? values[11].toString() : null,
-                cod_cpl_aux: values[12] ? values[12].toString() : null,
-                unidade_medida: values[13] ? values[13].toString() : null,
-                cod_compl: values[14] ? values[14].toString() : null,
-                grupo_material: values[15] ? values[15].toString() : null,
-                recebido: cleanNumber(values[16]),
-                devolucao: cleanNumber(values[17]),
-                aplicado: cleanNumber(values[18]),
-                removido: cleanNumber(values[19]),
-                saldo: cleanNumber(values[20]),
-                valor_unit: cleanNumber(values[21]),
-                total_rs: cleanNumber(values[22])
-            };
+            const equipe = getStr(values, col.equipe);
+            const nome_equipe = getStr(values, col.nome_equipe);
+            const cod_material = getStr(values, col.cod_material);
 
-            batch.push(record);
+            // Ignorar linhas sem dados essenciais
+            if (!equipe && !nome_equipe) return;
+            if (!cod_material) return;
+
+            allRecords.push({
+                cod_supervisor: getStr(values, col.cod_supervisor),
+                supervisor:     getStr(values, col.supervisor),
+                equipe:         equipe,
+                fre:            getStr(values, col.fre),
+                nome_equipe:    nome_equipe,
+                conta_cliente:  getStr(values, col.conta_cliente),
+                cod_material:   cod_material,
+                desc_material:  getStr(values, col.desc_material),
+                desc_auxiliar:  getStr(values, col.desc_auxiliar),
+                cod_cpl_aux:    getStr(values, col.cod_cpl_aux),
+                unidade_medida: getStr(values, col.unidade_medida),
+                cod_compl:      getStr(values, col.cod_compl),
+                grupo_material: getStr(values, col.grupo_material),
+                recebido:       cleanNumber(values[col.recebido]),
+                devolucao:      cleanNumber(values[col.devolucao]),
+                aplicado:       cleanNumber(values[col.aplicado]),
+                removido:       cleanNumber(values[col.removido]),
+                saldo:          cleanNumber(values[col.saldo]),
+                valor_unit:     cleanNumber(values[col.valor_unitario]),
+                total_rs:       cleanNumber(values[col.total]),
+            });
+
             totalProcessed++;
-
-            if (batch.length >= BATCH_SIZE) {
-                // Como eachRow é síncrono por padrão mas o processamento é async, 
-                // precisamos pausar ou controlar o fluxo se for muito grande.
-                // Usaremos um array de promessas para os batches.
-            }
         });
 
-        // Refactoring to handle batches properly since eachRow is not natively async
-        console.log(`🔍 Total de linhas encontradas para importar: ${totalProcessed}`);
-        
-        const allRecords = [];
-        worksheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
-            if (rowNumber > 5) {
-                const values = row.values;
-                if (values && values.length > 5) {
-                    allRecords.push({
-                        contrato: values[1] ? values[1].toString() : null,
-                        projeto: values[2] ? values[2].toString() : null,
-                        cod_supervisor: values[3] ? values[3].toString() : null,
-                        supervisor: values[4] ? values[4].toString() : null,
-                        equipe: values[5] ? values[5].toString() : null,
-                        fre: values[6] ? values[6].toString() : null,
-                        nome_equipe: values[7] ? values[7].toString() : null,
-                        conta_cliente: values[8] ? values[8].toString() : null,
-                        cod_material: values[9] ? values[9].toString() : null,
-                        desc_material: values[10] ? values[10].toString() : null,
-                        desc_auxiliar: values[11] ? values[11].toString() : null,
-                        cod_cpl_aux: values[12] ? values[12].toString() : null,
-                        unidade_medida: values[13] ? values[13].toString() : null,
-                        cod_compl: values[14] ? values[14].toString() : null,
-                        grupo_material: values[15] ? values[15].toString() : null,
-                        recebido: cleanNumber(values[16]),
-                        devolucao: cleanNumber(values[17]),
-                        aplicado: cleanNumber(values[18]),
-                        removido: cleanNumber(values[19]),
-                        saldo: cleanNumber(values[20]),
-                        valor_unit: cleanNumber(values[21]),
-                        total_rs: cleanNumber(values[22])
-                    });
-                }
-            }
-        });
+        console.log(`📦 ${allRecords.length} registros lidos. Iniciando inserção em batches...`);
 
-        console.log(`📦 Carregado em memória. Limpando base atual para substituição...`);
-        
-        // Truncar a tabela saldo_volante usando nossa função nativa RPC no banco de dados para evitar timeout e problemas de exclusão em massa.
-        const { error: deleteError } = await supabase.rpc('truncate_saldo_volante');
-        
-        if (deleteError) {
-            console.error("❌ Falha crítica ao tentar truncar/limpar a tabela saldo_volante:", deleteError.message);
-        } else {
-            console.log("🧹 Tabela saldo_volante limpa com sucesso. Iniciando upload dos novos dados...");
-        }
-
+        let totalInserted = 0;
         for (let i = 0; i < allRecords.length; i += BATCH_SIZE) {
-            const currentBatch = allRecords.slice(i, i + BATCH_SIZE);
-            const { error } = await supabase
-                .from('saldo_volante')
-                .insert(currentBatch);
-            
+            const batch = allRecords.slice(i, i + BATCH_SIZE);
+            const { error } = await supabase.from('saldo_volante').insert(batch);
             if (error) {
-                console.error(`❌ Erro no batch ${i/BATCH_SIZE + 1}:`, error.message);
+                console.error(`❌ Erro no batch ${Math.floor(i / BATCH_SIZE) + 1}:`, error.message);
             } else {
-                totalInserted += currentBatch.length;
-                process.stdout.write(`✅ Batch ${Math.floor(i/BATCH_SIZE) + 1} enviado (${totalInserted}/${allRecords.length})\n`);
+                totalInserted += batch.length;
+                process.stdout.write(`\r✅ Inseridos: ${totalInserted}/${allRecords.length}`);
             }
         }
 
-        console.log(`\n\n✨ Importação de Saldo concluída! Total inserido: ${totalInserted}`);
+        console.log(`\n\n✨ Importação concluída! Total inserido: ${totalInserted} registros.`);
 
-    } catch (error) {
-        console.error('💥 Erro fatal na importação:', error);
+    } catch (err) {
+        console.error('❌ Erro crítico na importação:', err.message);
     }
 }
 
-importExcel();
+importExcel().catch(console.error);
