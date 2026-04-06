@@ -129,14 +129,13 @@ async function exportCompleteReport(targetMonth = '03/2026') {
     const ws2 = workbook.addWorksheet('2. Resumo de Vagas e Orcamento');
     ws2.columns = [
         { header: 'Mês/Ano', key: 'mes', width: 12 },
+        { header: 'Status Contratação', key: 'status_contratacao', width: 25 }, // ← Novo
         { header: 'Base (Cidade/Cluster)', key: 'base', width: 25 },
         { header: 'Estado', key: 'estado', width: 10 },
-        { header: 'Função do Toolkit', key: 'funcao', width: 25 },
+        { header: 'Função do Toolkit', key: 'funcao', width: 30 },
         { header: 'Vagas Esperadas (A)', key: 'esperados', width: 18 },
         { header: 'Contratados Real (B)', key: 'entraram', width: 18 },
         { header: 'GAP Contratação (B-A)', key: 'gap', width: 18 },
-        { header: 'Techs c/ Excesso de Carga', key: 'paguei_a_mais_tecnicos', width: 22 },
-        { header: 'Techs c/ Itens Faltantes', key: 'receberam_listagem_faltante', width: 22 },
         { header: 'Orçamento Previsto', key: 'orcamento_previsto', width: 22, style: { numFmt: '"R$ "#,##0.00' } },
         { header: 'Custo Efetivo', key: 'orcamento_pago', width: 22, style: { numFmt: '"R$ "#,##0.00' } },
         { header: 'Saldo Orçamento', key: 'saldo_orcamento', width: 25, style: { numFmt: '"R$ "#,##0.00' } }
